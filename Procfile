@@ -1,1 +1,1 @@
-web: mcp run --transport sse src/server.py:app
+web: python src/server.py

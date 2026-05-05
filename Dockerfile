@@ -4,4 +4,4 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY src/ ./src/
 EXPOSE 8000
-CMD ["mcp", "run", "src/server.py:app"]
+CMD ["python", "src/server.py"]
