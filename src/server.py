@@ -16,10 +16,12 @@ from src.tools.run_query import handle_run_query
 from src.tools.list_tables import handle_list_tables
 from src.tools.get_row_count import handle_get_row_count
 
-# ALLOWED_HOSTS: comma-separated list of extra hostnames to allow (set in Railway Variables)
+# ALLOWED_HOSTS / ALLOWED_ORIGINS: comma-separated, set in Railway Variables
 _extra_hosts = [h.strip() for h in os.environ.get("ALLOWED_HOSTS", "").split(",") if h.strip()]
+_extra_origins = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "").split(",") if o.strip()]
 _security = TransportSecuritySettings(
-    allowed_hosts=["localhost", "127.0.0.1"] + _extra_hosts
+    allowed_hosts=["localhost", "127.0.0.1"] + _extra_hosts,
+    allowed_origins=["http://localhost:3000", "http://localhost:8000"] + _extra_origins,
 )
 
 app = FastMCP("postgres-mcp", transport_security=_security)
