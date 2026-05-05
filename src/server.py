@@ -59,5 +59,13 @@ async def get_row_count(
 
 if __name__ == "__main__":
     import uvicorn
+    from starlette.middleware.cors import CORSMiddleware
+
     port = int(os.environ.get("PORT", 8000))
-    uvicorn.run(app.streamable_http_app(), host="0.0.0.0", port=port)
+    mcp_app = CORSMiddleware(
+        app.streamable_http_app(),
+        allow_origins=["*"],
+        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_headers=["Content-Type", "Accept", "Mcp-Session-Id"],
+    )
+    uvicorn.run(mcp_app, host="0.0.0.0", port=port)
