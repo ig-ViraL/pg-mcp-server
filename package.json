@@ -1,0 +1,12 @@
+{
+  "name": "pg-mcp-server",
+  "version": "1.0.0",
+  "description": "PostgreSQL MCP Server",
+  "scripts": {
+    "dev": "mcp-inspector mcp run src/server.py:app",
+    "start": "mcp run --transport sse src/server.py:app"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/inspector": "latest"
+  }
+}

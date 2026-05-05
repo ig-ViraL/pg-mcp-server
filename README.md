@@ -1,0 +1,208 @@
+# pg-mcp-server
+
+A [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server that gives AI tools (Claude, Cursor, etc.) safe, **read-only** access to a PostgreSQL database.
+
+---
+
+## Prerequisites
+
+| Requirement | Version | Purpose |
+|---|---|---|
+| Python | 3.11+ | Running the server |
+| Node.js | 18+ | Inspector UI in dev mode only |
+| PostgreSQL | any | Your database |
+
+> Node.js is only required for `npm run dev` (the browser UI). The production command has no Node.js dependency.
+
+---
+
+## Setup
+
+```bash
+git clone <repo-url>
+cd pg-mcp-server
+
+# Python dependencies
+pip install -r requirements.txt
+
+# Node.js dependencies (installs MCP Inspector locally — no global npx needed)
+npm install
+
+cp .env.example .env
+# Edit .env and set your DATABASE_URL
+```
+
+`.env` format:
+
+```env
+DATABASE_URL=postgresql://<user>:<password>@<host>:<port>/<database>
+```
+
+---
+
+## Commands
+
+### Dev — server + Inspector UI
+
+```bash
+npm run dev
+```
+
+Opens the [MCP Inspector](https://github.com/modelcontextprotocol/inspector) in your browser — a UI for calling tools, inspecting schemas, and viewing raw responses. Uses your `.env` automatically.
+
+The inspector is bundled as a local devDependency (`npm install` above) — no global `npx` or manual installs required. `mcp run` is used as the server command because the inspector requires it to handle the stdio handshake correctly.
+
+---
+
+### Production — SSE server
+
+```bash
+npm start
+```
+
+Starts the MCP server over SSE transport on port 8000. Run this after deployment. No Node.js required at runtime — `npm start` is just a shortcut for:
+
+```bash
+mcp run --transport sse src/server.py:app
+```
+
+---
+
+## Connect to Claude Desktop
+
+Add this to your Claude Desktop config file (`claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "postgres": {
+      "command": "mcp",
+      "args": ["run", "src/server.py:app"],
+      "env": {
+        "DATABASE_URL": "postgresql://postgres:password@localhost:5432/mydb"
+      }
+    }
+  }
+}
+```
+
+Config file locations:
+- **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
+
+Restart Claude Desktop after saving.
+
+---
+
+## Project Structure
+
+```
+pg-mcp-server/
+├── src/
+│   ├── server.py          # Entry point — defines the MCP app
+│   ├── db/
+│   │   └── pool.py        # asyncpg connection pool
+│   ├── tools/
+│   │   ├── run_query.py   # run_query tool handler
+│   │   ├── list_tables.py # list_tables tool handler
+│   │   └── get_row_count.py # get_row_count tool handler
+│   └── safety/
+│       └── validator.py   # SQL validation and injection guard
+├── tests/
+│   └── test_validator.py
+├── .env                   # local secrets (git-ignored)
+├── .env.example           # config template
+├── Dockerfile
+├── Procfile               # Railway deployment
+└── requirements.txt
+```
+
+---
+
+## Available Tools
+
+### `run_query`
+
+Execute a read-only `SELECT` query.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `sql` | string | yes | — | SELECT statement |
+| `limit` | integer | no | 100 | Max rows returned (1–500) |
+
+```json
+{ "sql": "SELECT * FROM orders WHERE status = 'delivered'", "limit": 50 }
+```
+
+---
+
+### `list_tables`
+
+List all tables and columns in the `public` schema. No parameters required.
+
+---
+
+### `get_row_count`
+
+Get the exact live row count for a table.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `table_name` | string | yes | Name of the table |
+
+```json
+{ "table_name": "orders" }
+```
+
+---
+
+## Safety
+
+All queries pass through `src/safety/validator.py` before touching the database.
+
+- Only `SELECT` queries are allowed — anything else is rejected
+- Blocked keywords: `DROP`, `DELETE`, `UPDATE`, `INSERT`, `TRUNCATE`, `ALTER`, `CREATE`, `GRANT`, `REVOKE`, `EXEC`, `EXECUTE`, `COPY`
+- Inline comments (`--`) and multi-statement queries (`; ...`) are blocked
+- Table names validated against `^[a-zA-Z_][a-zA-Z0-9_]*$`
+- Every query runs with `statement_timeout = 5s` — long queries are killed automatically
+
+---
+
+## Tests
+
+```bash
+pytest tests/ -v
+```
+
+---
+
+## Docker
+
+```bash
+docker build -t pg-mcp-server .
+docker run -e DATABASE_URL=postgresql://user:pass@host:5432/db pg-mcp-server
+```
+
+---
+
+## Deploy to Railway
+
+1. Push to GitHub
+2. New Railway project → **Deploy from GitHub**
+3. Set `DATABASE_URL` in Railway **Variables**
+4. Railway picks up the `Procfile` and deploys automatically
+
+---
+
+## PostgreSQL Read-Only Role (recommended for production)
+
+```sql
+CREATE ROLE mcp_readonly LOGIN PASSWORD 'strong_password_here';
+GRANT CONNECT ON DATABASE your_db TO mcp_readonly;
+GRANT USAGE ON SCHEMA public TO mcp_readonly;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO mcp_readonly;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT SELECT ON TABLES TO mcp_readonly;
+```
+
+Then update `DATABASE_URL` to use `mcp_readonly` instead of a superuser.

@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(psql *)",
+      "PowerShell(Get-Command *)",
+      "Bash(where psql *)",
+      "PowerShell(python -c \"import psycopg2; conn = psycopg2.connect\\('postgresql://postgres:viral@localhost:5432/mcp-test'\\); print\\('connected'\\); conn.close\\(\\)\")",
+      "PowerShell(pip show *)",
+      "PowerShell(python \"D:\\\\Work\\\\Projects\\\\pg-mcp-server\\\\seed.py\")",
+      "PowerShell(Get-Content *)",
+      "PowerShell(Get-Process *)",
+      "PowerShell(netstat *)",
+      "PowerShell(Stop-Process *)",
+      "PowerShell(Invoke-RestMethod http://localhost:8000/health; Invoke-RestMethod -Method POST http://localhost:8000/api/call -ContentType \"application/json\" -Body '{\"tool\":\"list_tables\",\"arguments\":{}}')",
+      "PowerShell($h = Invoke-WebRequest http://localhost:8000/health; $h.StatusCode; $h.Content)",
+      "PowerShell(python -c \"import urllib.request, json; r=urllib.request.urlopen\\('http://localhost:8000/health'\\); print\\(r.status, r.read\\(\\).decode\\(\\)\\)\")",
+      "PowerShell(mcp *)",
+      "PowerShell(pip install *)",
+      "Bash(npm install *)",
+      "Bash(node node_modules/@modelcontextprotocol/inspector/package.json)",
+      "Bash(python -c \"import sys,json;d=json.load\\(sys.stdin\\);print\\(d['version']\\)\")",
+      "PowerShell($pkg = Get-Content \"D:\\\\Work\\\\Projects\\\\pg-mcp-server\\\\node_modules\\\\@modelcontextprotocol\\\\inspector\\\\package.json\" -Raw | ConvertFrom-Json; Write-Output \"Version: $\\($pkg.version\\)\"; Write-Output \"Bin: $\\($pkg.bin\\)\")"
+    ]
+  }
+}
