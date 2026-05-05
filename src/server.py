@@ -3,6 +3,7 @@ import sys
 from pathlib import Path
 from typing import Annotated
 from dotenv import load_dotenv
+from starlette.middleware.cors import CORSMiddleware
 
 _ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(_ROOT / ".env")
@@ -60,4 +61,10 @@ async def get_row_count(
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
-    uvicorn.run(app.streamable_http_app(), host="0.0.0.0", port=port)
+    mcp_app = CORSMiddleware(
+        app.streamable_http_app(),
+        allow_origins=["*"],
+        allow_methods=["POST", "OPTIONS"],
+        allow_headers=["Content-Type", "Accept", "Mcp-Session-Id"],
+    )
+    uvicorn.run(mcp_app, host="0.0.0.0", port=port)
