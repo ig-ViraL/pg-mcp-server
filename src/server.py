@@ -69,5 +69,6 @@ if __name__ == "__main__":
         allow_origins=["*"],
         allow_methods=["GET", "POST", "OPTIONS"],
         allow_headers=["Content-Type", "Accept", "Mcp-Session-Id"],
+        expose_headers=["Mcp-Session-Id"],
     )
     uvicorn.run(mcp_app, host="0.0.0.0", port=port)
