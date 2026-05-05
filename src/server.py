@@ -1,3 +1,4 @@
+import os
 import sys
 from pathlib import Path
 from typing import Annotated
@@ -5,6 +6,12 @@ from dotenv import load_dotenv
 
 _ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(_ROOT / ".env")
+
+# FastMCP reads FASTMCP_HOST / FASTMCP_PORT at instantiation time.
+# Railway injects PORT, so map it here before FastMCP() is created.
+os.environ.setdefault("FASTMCP_HOST", "0.0.0.0")
+if "PORT" in os.environ:
+    os.environ.setdefault("FASTMCP_PORT", os.environ["PORT"])
 
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
@@ -50,4 +57,4 @@ async def get_row_count(
 
 
 if __name__ == "__main__":
-    app.run()
+    app.run(transport="sse")
