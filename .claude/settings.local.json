@@ -19,7 +19,19 @@
       "Bash(npm install *)",
       "Bash(node node_modules/@modelcontextprotocol/inspector/package.json)",
       "Bash(python -c \"import sys,json;d=json.load\\(sys.stdin\\);print\\(d['version']\\)\")",
-      "PowerShell($pkg = Get-Content \"D:\\\\Work\\\\Projects\\\\pg-mcp-server\\\\node_modules\\\\@modelcontextprotocol\\\\inspector\\\\package.json\" -Raw | ConvertFrom-Json; Write-Output \"Version: $\\($pkg.version\\)\"; Write-Output \"Bin: $\\($pkg.bin\\)\")"
+      "PowerShell($pkg = Get-Content \"D:\\\\Work\\\\Projects\\\\pg-mcp-server\\\\node_modules\\\\@modelcontextprotocol\\\\inspector\\\\package.json\" -Raw | ConvertFrom-Json; Write-Output \"Version: $\\($pkg.version\\)\"; Write-Output \"Bin: $\\($pkg.bin\\)\")",
+      "WebFetch(domain:github.com)",
+      "WebSearch",
+      "WebFetch(domain:arize.com)",
+      "WebFetch(domain:www.bytebase.com)",
+      "WebFetch(domain:sequel.sh)",
+      "WebFetch(domain:dbhub.ai)",
+      "WebFetch(domain:vanna.ai)",
+      "WebFetch(domain:promethium.ai)",
+      "Bash(python -c \"from src.tools.list_tables import handle_list_tables; from src.tools.describe_table import handle_describe_table; from src.tools.search_schema import handle_search_schema; from src.tools.annotate import handle_annotate_table, handle_annotate_column; from src.tools.explain_query import handle_explain_query; from src.tools.get_db_health import handle_get_db_health; print\\('All imports OK'\\)\")",
+      "Bash(python -c \"from src.server import app; print\\('server OK — tools:', [t.name for t in app._tool_manager.list_tools\\(\\)]\\)\")",
+      "Bash(python -c ' *)",
+      "Bash(python -c \"from src.server import app; print\\([t.name for t in app._tool_manager.list_tools\\(\\)]\\)\")"
     ]
   }
 }

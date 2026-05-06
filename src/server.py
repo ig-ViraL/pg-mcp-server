@@ -15,8 +15,13 @@ from mcp.server.transport_security import TransportSecuritySettings
 from src.tools.run_query import handle_run_query
 from src.tools.list_tables import handle_list_tables
 from src.tools.get_row_count import handle_get_row_count
+from src.tools.describe_table import handle_describe_table
+from src.tools.search_schema import handle_search_schema
+from src.tools.annotate import handle_annotate_table, handle_annotate_column
+from src.tools.explain_query import handle_explain_query
+from src.tools.get_db_health import handle_get_db_health
+from src.tools.get_slow_queries import handle_get_slow_queries
 
-# ALLOWED_HOSTS / ALLOWED_ORIGINS: comma-separated, set in Railway Variables
 _extra_hosts = [h.strip() for h in os.environ.get("ALLOWED_HOSTS", "").split(",") if h.strip()]
 _extra_origins = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "").split(",") if o.strip()]
 _security = TransportSecuritySettings(
@@ -26,6 +31,9 @@ _security = TransportSecuritySettings(
 
 app = FastMCP("postgres-mcp", transport_security=_security)
 
+# ---------------------------------------------------------------------------
+# Tools
+# ---------------------------------------------------------------------------
 
 @app.tool()
 async def run_query(
@@ -41,7 +49,7 @@ async def run_query(
 
 @app.tool()
 async def list_tables() -> str:
-    """List all tables and their columns in the public schema."""
+    """List all tables with columns, types, PKs, FKs, indexes, and comments."""
     result = await handle_list_tables()
     if result.get("isError"):
         raise ValueError(result["content"])
@@ -58,6 +66,117 @@ async def get_row_count(
         raise ValueError(result["content"])
     return result["content"]
 
+
+@app.tool()
+async def describe_table(
+    table_name: Annotated[str, "Table name"],
+) -> str:
+    """Deep metadata for a single table: columns, PKs, FKs, indexes, sample rows, row count, and comment."""
+    result = await handle_describe_table(table_name=table_name)
+    if result.get("isError"):
+        raise ValueError(result["content"])
+    return result["content"]
+
+
+@app.tool()
+async def search_schema(
+    query: Annotated[str, "Keywords to search (e.g. 'customer revenue')"],
+) -> str:
+    """Full-text search across table names, column names, and column comments."""
+    result = await handle_search_schema(query=query)
+    if result.get("isError"):
+        raise ValueError(result["content"])
+    return result["content"]
+
+
+@app.tool()
+async def annotate_table(
+    table_name: Annotated[str, "Table name"],
+    comment: Annotated[str, "Business description for this table"],
+) -> str:
+    """Write a business-context comment onto a PostgreSQL table (COMMENT ON TABLE)."""
+    result = await handle_annotate_table(table_name=table_name, comment=comment)
+    if result.get("isError"):
+        raise ValueError(result["content"])
+    return result["content"]
+
+
+@app.tool()
+async def annotate_column(
+    table_name: Annotated[str, "Table name"],
+    column_name: Annotated[str, "Column name"],
+    comment: Annotated[str, "Business description for this column"],
+) -> str:
+    """Write a business-context comment onto a PostgreSQL column (COMMENT ON COLUMN)."""
+    result = await handle_annotate_column(
+        table_name=table_name, column_name=column_name, comment=comment
+    )
+    if result.get("isError"):
+        raise ValueError(result["content"])
+    return result["content"]
+
+
+@app.tool()
+async def explain_query(
+    sql: Annotated[str, "SELECT query to explain"],
+    analyze: Annotated[bool, "Run ANALYZE for real execution stats (default false)"] = False,
+) -> str:
+    """Return the query plan as JSON. Use analyze=false (default) for safe plan inspection without execution."""
+    result = await handle_explain_query(sql=sql, analyze=analyze)
+    if result.get("isError"):
+        raise ValueError(result["content"])
+    return result["content"]
+
+
+@app.tool()
+async def get_slow_queries(
+    limit: Annotated[int, "Number of slowest queries to return (1-100, default 10)"] = 10,
+) -> str:
+    """Top-N slowest queries by total execution time from pg_stat_statements."""
+    result = await handle_get_slow_queries(limit=limit)
+    if result.get("isError"):
+        raise ValueError(result["content"])
+    return result["content"]
+
+
+@app.tool()
+async def get_db_health() -> str:
+    """Health check: unused indexes, table bloat, long-running queries, and connection utilization."""
+    result = await handle_get_db_health()
+    if result.get("isError"):
+        raise ValueError(result["content"])
+    return result["content"]
+
+
+# ---------------------------------------------------------------------------
+# Prompt resource
+# ---------------------------------------------------------------------------
+
+@app.prompt()
+async def nl_to_sql() -> str:
+    """Reusable system prompt for generating safe, high-quality PostgreSQL SELECT queries."""
+    return """You are a PostgreSQL expert generating read-only SELECT queries.
+
+Rules:
+- NEVER use SELECT * — select only the columns needed
+- ALWAYS alias tables in JOINs (e.g. customers c, orders o)
+- ALWAYS add LIMIT for exploratory queries (default 100)
+- Call describe_table before writing any JOIN query
+- If the question is ambiguous, ask ONE clarifying question instead of guessing
+- When you make an assumption, state it explicitly before the SQL
+- Prefer window functions over nested subqueries when equivalent
+- Use date_trunc() for time bucketing, not EXTRACT()
+
+Chain-of-thought before SQL:
+1. Identify the relevant tables
+2. Identify the JOIN path using foreign keys
+3. Identify filters and aggregations needed
+4. Write the SQL"""
+
+
+# ---------------------------------------------------------------------------
+# Entrypoint
+# ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
     import uvicorn
