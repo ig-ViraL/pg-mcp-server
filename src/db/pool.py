@@ -1,24 +1,28 @@
 import asyncpg
 import os
+from contextvars import ContextVar
 from typing import Optional
 
-_pool: Optional[asyncpg.Pool] = None
+# Set per-request by DBUrlMiddleware when X-DB-URL header is present.
+_db_url_var: ContextVar[Optional[str]] = ContextVar("db_url", default=None)
+
+# One pool per unique connection URL so user pools are reused across calls.
+_pools: dict[str, asyncpg.Pool] = {}
 
 
 async def get_pool() -> asyncpg.Pool:
-    global _pool
-    if _pool is None:
-        url = os.environ["DATABASE_URL"]
-        _pool = await asyncpg.create_pool(
+    url = _db_url_var.get() or os.environ["DATABASE_URL"]
+    if url not in _pools:
+        _pools[url] = await asyncpg.create_pool(
             url,
-            min_size=2,
+            min_size=1,
             max_size=5,
+            command_timeout=10,
         )
-    return _pool
+    return _pools[url]
 
 
 async def close_pool() -> None:
-    global _pool
-    if _pool is not None:
-        await _pool.close()
-        _pool = None
+    for pool in _pools.values():
+        await pool.close()
+    _pools.clear()

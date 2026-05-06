@@ -12,6 +12,8 @@ if str(_ROOT) not in sys.path:
 
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
+from src.db.pool import _db_url_var
+from src.crypto import decrypt_db_url
 from src.tools.run_query import handle_run_query
 from src.tools.list_tables import handle_list_tables
 from src.tools.get_row_count import handle_get_row_count
@@ -21,6 +23,42 @@ from src.tools.annotate import handle_annotate_table, handle_annotate_column
 from src.tools.explain_query import handle_explain_query
 from src.tools.get_db_health import handle_get_db_health
 from src.tools.get_slow_queries import handle_get_slow_queries
+
+_SHARED_SECRET = os.environ.get("SHARED_SECRET", "")
+
+# ---------------------------------------------------------------------------
+# ASGI middleware: decrypt X-DB-URL header and bind it to the request context
+# ---------------------------------------------------------------------------
+
+class DBUrlMiddleware:
+    """Pure-ASGI middleware that reads X-DB-URL, decrypts it, and sets the
+    per-request context variable so get_pool() uses the caller's database."""
+
+    def __init__(self, app):
+        self._app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http" and _SHARED_SECRET:
+            raw = dict(scope.get("headers", [])).get(b"x-db-url", b"")
+            if raw:
+                try:
+                    url = decrypt_db_url(raw.decode(), _SHARED_SECRET)
+                except Exception:
+                    await send({
+                        "type": "http.response.start",
+                        "status": 400,
+                        "headers": [(b"content-type", b"text/plain")],
+                    })
+                    await send({"type": "http.response.body", "body": b"Invalid X-DB-URL"})
+                    return
+                token = _db_url_var.set(url)
+                try:
+                    await self._app(scope, receive, send)
+                finally:
+                    _db_url_var.reset(token)
+                return
+        await self._app(scope, receive, send)
+
 
 _extra_hosts = [h.strip() for h in os.environ.get("ALLOWED_HOSTS", "").split(",") if h.strip()]
 _extra_origins = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "").split(",") if o.strip()]
@@ -184,10 +222,10 @@ if __name__ == "__main__":
 
     port = int(os.environ.get("PORT", 8000))
     mcp_app = CORSMiddleware(
-        app.streamable_http_app(),
+        DBUrlMiddleware(app.streamable_http_app()),
         allow_origins=["*"],
         allow_methods=["GET", "POST", "OPTIONS"],
-        allow_headers=["Content-Type", "Accept", "Mcp-Session-Id"],
+        allow_headers=["Content-Type", "Accept", "Mcp-Session-Id", "X-DB-URL"],
         expose_headers=["Mcp-Session-Id"],
     )
     uvicorn.run(mcp_app, host="0.0.0.0", port=port)

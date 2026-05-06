@@ -31,7 +31,8 @@
       "Bash(python -c \"from src.tools.list_tables import handle_list_tables; from src.tools.describe_table import handle_describe_table; from src.tools.search_schema import handle_search_schema; from src.tools.annotate import handle_annotate_table, handle_annotate_column; from src.tools.explain_query import handle_explain_query; from src.tools.get_db_health import handle_get_db_health; print\\('All imports OK'\\)\")",
       "Bash(python -c \"from src.server import app; print\\('server OK — tools:', [t.name for t in app._tool_manager.list_tools\\(\\)]\\)\")",
       "Bash(python -c ' *)",
-      "Bash(python -c \"from src.server import app; print\\([t.name for t in app._tool_manager.list_tools\\(\\)]\\)\")"
+      "Bash(python -c \"from src.server import app; print\\([t.name for t in app._tool_manager.list_tools\\(\\)]\\)\")",
+      "Bash(python *)"
     ]
   }
 }
