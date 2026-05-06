@@ -1,4 +1,8 @@
+import os
+
 import psycopg2
+
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:viral@localhost:5432/mcp-test")
 
 DDL = """
 -- 1. customers
@@ -118,7 +122,7 @@ INSERT INTO reviews (customer_id, product_id, rating, review_date, comment) VALU
 ON CONFLICT DO NOTHING;
 """
 
-conn = psycopg2.connect("postgresql://postgres:viral@localhost:5432/mcp-test")
+conn = psycopg2.connect(DATABASE_URL)
 conn.autocommit = True
 cur = conn.cursor()
 
