@@ -266,7 +266,7 @@ def gen_reviews(n: int, num_customers: int, num_products: int):
 def main():
     random.seed(42)
 
-    conn = psycopg2.connect(DATABASE_URL)
+    conn = psycopg2.connect("postgresql://REDACTED")
     conn.autocommit = True
     cur = conn.cursor()
 
