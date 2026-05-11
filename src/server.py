@@ -12,7 +12,7 @@ if str(_ROOT) not in sys.path:
 
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
-from src.db.pool import _db_url_var
+from src.db.pool import _db_url_var, _session_id_var
 from src.crypto import decrypt_db_url
 from src.tools.run_query import handle_run_query
 from src.tools.list_tables import handle_list_tables
@@ -39,7 +39,8 @@ class DBUrlMiddleware:
 
     async def __call__(self, scope, receive, send):
         if scope["type"] == "http" and _SHARED_SECRET:
-            raw = dict(scope.get("headers", [])).get(b"x-db-url", b"")
+            headers = dict(scope.get("headers", []))
+            raw = headers.get(b"x-db-url", b"")
             if raw:
                 try:
                     url = decrypt_db_url(raw.decode(), _SHARED_SECRET)
@@ -51,11 +52,15 @@ class DBUrlMiddleware:
                     })
                     await send({"type": "http.response.body", "body": b"Invalid X-DB-URL"})
                     return
-                token = _db_url_var.set(url)
+
+                session_id = headers.get(b"mcp-session-id", b"").decode() or None
+                url_token = _db_url_var.set(url)
+                sid_token = _session_id_var.set(session_id)
                 try:
                     await self._app(scope, receive, send)
                 finally:
-                    _db_url_var.reset(token)
+                    _db_url_var.reset(url_token)
+                    _session_id_var.reset(sid_token)
                 return
         await self._app(scope, receive, send)
 

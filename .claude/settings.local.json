@@ -32,7 +32,8 @@
       "Bash(python -c \"from src.server import app; print\\('server OK — tools:', [t.name for t in app._tool_manager.list_tools\\(\\)]\\)\")",
       "Bash(python -c ' *)",
       "Bash(python -c \"from src.server import app; print\\([t.name for t in app._tool_manager.list_tools\\(\\)]\\)\")",
-      "Bash(python *)"
+      "Bash(python *)",
+      "Bash(pip install *)"
     ]
   }
 }
