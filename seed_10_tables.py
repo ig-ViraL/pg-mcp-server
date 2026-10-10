@@ -5,7 +5,7 @@ from datetime import date, datetime, timedelta
 
 import psycopg2
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:viral@localhost:5432/mcp-test")
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/mcp_test")
 
 N = 100
 
@@ -266,7 +266,7 @@ def gen_reviews(n: int, num_customers: int, num_products: int):
 def main():
     random.seed(42)
 
-    conn = psycopg2.connect("postgresql://REDACTED")
+    conn = psycopg2.connect(DATABASE_URL)
     conn.autocommit = True
     cur = conn.cursor()
 

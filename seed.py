@@ -2,7 +2,7 @@ import os
 
 import psycopg2
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:viral@localhost:5432/mcp-test")
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/mcp_test")
 
 DDL = """
 -- 1. customers
