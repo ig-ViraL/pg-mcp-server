@@ -39,3 +39,12 @@ def decrypt_db_url(token: str, secret: str) -> str:
         raise ValueError("Token too short")
     nonce, ct_and_tag = data[:12], data[12:]
     return AESGCM(key).decrypt(nonce, ct_and_tag, None).decode()
+
+
+def encrypt_db_url(url: str, secret: str) -> str:
+    """Inverse of decrypt_db_url (same token format). Handy for tests and CLI clients."""
+    import os
+
+    nonce = os.urandom(12)
+    ct_and_tag = AESGCM(_derive_key(secret)).encrypt(nonce, url.encode(), None)
+    return base64.b64encode(nonce + ct_and_tag).decode()
