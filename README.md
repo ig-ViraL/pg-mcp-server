@@ -1,8 +1,39 @@
-# pg-mcp-server
+<div align="center">
 
-A [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server that gives AI tools (Claude, Cursor, etc.) safe, **read-only** access to a PostgreSQL database.
+# 🐘 pg-mcp-server
 
----
+**A Model Context Protocol server that lets LLMs explore and query PostgreSQL safely: 10 tools, read-only by design, bring-your-own-database with encrypted connection strings.**
+
+![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white) ![MCP](https://img.shields.io/badge/MCP-FastMCP-d77757) ![Tests](https://github.com/ig-ViraL/pg-mcp-server/actions/workflows/ci.yml/badge.svg) ![License](https://img.shields.io/badge/License-MIT-green)
+
+</div>
+
+## Highlights
+
+| | |
+|:--|:--|
+| 🧰 **10 tools** | Schema discovery, query execution, `EXPLAIN` plans, slow-query analysis and DB health checks |
+| 🛡️ **Defence in depth** | `SELECT`-only validator (blocks DDL/DML, stacked queries, comments), auto-injected `LIMIT`, 5 s statement timeout, read-only DB role |
+| 🔐 **Bring your own DB** | Visitors' connection strings travel as an **AES-256-GCM** token (`X-DB-URL`); nothing is stored server-side |
+| 🧠 **Prompt included** | An `nl_to_sql` MCP prompt that pushes models to inspect foreign keys before writing JOINs |
+| 🗄️ **Multi-driver** | PostgreSQL (asyncpg), MySQL and SQLite drivers behind one interface |
+| ✅ **Tested** | 29 unit tests (validator, crypto) run in CI |
+
+> Built with Claude Code as a pair programmer; the safety model and architecture are mine. A live chat UI for this server lives in my [portfolio](https://www.viral-deshle.cloud/pg-mcp).
+
+## Tools
+
+| Tool | What it does |
+|:--|:--|
+| `list_tables` | Tables with columns, types, PKs, FKs, indexes and comments |
+| `describe_table` | Deep metadata for one table, plus sample rows and row count |
+| `search_schema` | Keyword search across table, column and comment text |
+| `get_row_count` | Exact row count for a table |
+| `run_query` | Read-only `SELECT`, validated, with auto `LIMIT` and timeout |
+| `explain_query` | Execution plan for a query |
+| `get_slow_queries` | Slowest statements from `pg_stat_statements` |
+| `get_db_health` | Index bloat, long-running queries, connection usage |
+| `annotate_table` / `annotate_column` | Attach business descriptions the model can read later |
 
 ## Prerequisites
 
@@ -119,42 +150,6 @@ pg-mcp-server/
 
 ---
 
-## Available Tools
-
-### `run_query`
-
-Execute a read-only `SELECT` query.
-
-| Parameter | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `sql` | string | yes | — | SELECT statement |
-| `limit` | integer | no | 100 | Max rows returned (1–500) |
-
-```json
-{ "sql": "SELECT * FROM orders WHERE status = 'delivered'", "limit": 50 }
-```
-
----
-
-### `list_tables`
-
-List all tables and columns in the `public` schema. No parameters required.
-
----
-
-### `get_row_count`
-
-Get the exact live row count for a table.
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `table_name` | string | yes | Name of the table |
-
-```json
-{ "table_name": "orders" }
-```
-
----
 
 ## Safety
 
