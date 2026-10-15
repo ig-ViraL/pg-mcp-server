@@ -1,4 +1,4 @@
-mcp[cli]>=1.0.0
+mcp[cli]>=1.0.0,<2
 asyncpg>=0.29.0
 aiomysql>=0.2.0
 aiosqlite>=0.20.0
