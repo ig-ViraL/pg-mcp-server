@@ -129,8 +129,12 @@ CREATE TABLE IF NOT EXISTS reviews (
 
 
 def rand_date(start_year=2023, end_year=2024):
-    start = date(start_year, 1, 1)
-    end = date(end_year, 12, 31)
+    """Random date within the ~2 years up to yesterday, so "last month" style questions return rows.
+
+    The year arguments are kept for call-site compatibility; the window is relative to today.
+    """
+    end = date.today() - timedelta(days=1)
+    start = end - timedelta(days=730)
     return start + timedelta(days=random.randint(0, (end - start).days))
 
 
