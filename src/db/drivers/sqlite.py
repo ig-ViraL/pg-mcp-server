@@ -32,6 +32,14 @@ class SQLiteDriver(BaseDriver):
                 rows = await cur.fetchall()
                 return [dict(r) for r in rows]
 
+    async def _fetch_readonly(self, sql: str) -> list[dict]:
+        """Run model-written SQL on a read-only connection."""
+        async with aiosqlite.connect(f"file:{self._path}?mode=ro", uri=True) as conn:
+            conn.row_factory = aiosqlite.Row
+            async with conn.execute(sql) as cur:
+                rows = await cur.fetchall()
+                return [dict(r) for r in rows]
+
     async def _fetchone(self, sql: str, args: tuple = ()) -> dict | None:
         rows = await self._fetch(sql, args)
         return rows[0] if rows else None
@@ -53,7 +61,7 @@ class SQLiteDriver(BaseDriver):
             return {"isError": True, "content": reason}
         sql = self.inject_limit(sql, limit)
         try:
-            rows = await self._fetch(sql)
+            rows = await self._fetch_readonly(sql)
             return {
                 "isError": False,
                 "content": json.dumps({"rows": rows, "row_count": len(rows)}, default=str),
@@ -219,7 +227,7 @@ class SQLiteDriver(BaseDriver):
         if not ok:
             return {"isError": True, "content": f"Query blocked: {reason}"}
         try:
-            rows = await self._fetch(f"EXPLAIN QUERY PLAN {sql}")
+            rows = await self._fetch_readonly(f"EXPLAIN QUERY PLAN {sql}")
             return {"isError": False, "content": json.dumps(rows, default=str)}
         except Exception as e:
             return self._err(e)

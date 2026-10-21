@@ -1,13 +1,6 @@
-import re
 from abc import ABC, abstractmethod
 
-_BLOCKED = [
-    r'\bDROP\b', r'\bDELETE\b', r'\bUPDATE\b', r'\bINSERT\b',
-    r'\bTRUNCATE\b', r'\bALTER\b', r'\bCREATE\b', r'\bGRANT\b',
-    r'\bREVOKE\b', r'\bEXEC\b', r'\bEXECUTE\b', r'\bCOPY\b',
-    r'--', r';.+\S',
-]
-_TABLE_NAME_RE = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*$')
+from src.safety import validator
 
 
 class BaseDriver(ABC):
@@ -60,23 +53,13 @@ class BaseDriver(ABC):
     # ── Shared validation (works for any SQL engine) ──────────────────────────
 
     def validate_query(self, sql: str) -> tuple[bool, str | None]:
-        stripped = sql.strip()
-        if not stripped.upper().startswith("SELECT"):
-            return False, "Query must start with SELECT"
-        for pattern in _BLOCKED:
-            if re.search(pattern, stripped, re.IGNORECASE):
-                return False, f"Query contains blocked pattern: {pattern}"
-        return True, None
+        return validator.validate_query(sql)
 
     def validate_table_name(self, name: str) -> tuple[bool, str | None]:
-        if not _TABLE_NAME_RE.match(name):
-            return False, f"Invalid table name: {name!r}"
-        return True, None
+        return validator.validate_table_name(name)
 
     def inject_limit(self, sql: str, limit: int) -> str:
-        if not re.search(r"\bLIMIT\b", sql, re.IGNORECASE):
-            return f"{sql.rstrip().rstrip(';')} LIMIT {limit}"
-        return sql
+        return validator.inject_limit(sql, limit)
 
     # ── Helper for unsupported features ──────────────────────────────────────
 

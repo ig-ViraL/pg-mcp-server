@@ -5,12 +5,16 @@
 
 ---
 
-## Current State
+## Current State (Oct 2026)
 
-3 tools exposed:
-- `run_query` — read-only SELECT with validation + auto LIMIT
-- `list_tables` — basic column names + types from `information_schema`
-- `get_row_count` — approximate row count per table
+All P0 and P1 items below have shipped: 10 tools (`list_tables`, `describe_table`, `search_schema`, `get_row_count`, `run_query`, `explain_query`, `get_slow_queries`, `get_db_health`, `annotate_table`, `annotate_column`), the `nl_to_sql` prompt, PostgreSQL / MySQL / SQLite drivers, and two-layer query safety (static validator + read-only transactions). The sections below are kept as the original research notes.
+
+## Next phases
+
+1. **Distribution:** publish to PyPI so it runs with `uvx pg-mcp-server`, and list it in the MCP server registries.
+2. **Accuracy evals:** 30 natural-language questions against the seeded demo DB with expected results; report accuracy per model in the README.
+3. **Parser-based validation:** switch the regex validator to `pglast` (AST check for `SelectStmt` only). The read-only transaction already makes a bypass harmless; this removes false positives on string literals.
+4. **Query history resource** and **golden SQL** store (see P2).
 
 ---
 
@@ -170,17 +174,3 @@ Chain-of-thought before SQL:
 | **Our server** | — | Railway deploy, clean safety layer | Missing rich schema + prompts |
 
 **Our gap to own:** Business metadata flywheel (annotate → enrich → smarter queries) + MCP prompt resource. No one has both.
-
----
-
-## Development Order for Tomorrow
-
-```
-1. Enrich list_tables (pg_catalog queries + FK + comments)
-2. Add describe_table tool
-3. Add search_schema tool
-4. Add nl_to_sql MCP prompt resource
-5. Add annotate_column / annotate_table tools
-6. Add explain_query tool
-7. Add get_db_health tool
-```

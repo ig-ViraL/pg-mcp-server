@@ -29,7 +29,9 @@ class PostgresDriver(BaseDriver):
         try:
             async with self._pool.acquire() as conn:
                 await conn.execute("SET statement_timeout = '5000'")
-                rows = await conn.fetch(sql)
+                # Read-only transaction: even a query that passes the validator cannot write.
+                async with conn.transaction(readonly=True):
+                    rows = await conn.fetch(sql)
             return {
                 "isError": False,
                 "content": json.dumps(
@@ -355,7 +357,9 @@ LIMIT 50
             async with self._pool.acquire() as conn:
                 await conn.execute("SET statement_timeout = '10000'")
                 flag = "true" if analyze else "false"
-                plan_rows = await conn.fetch(f"EXPLAIN (ANALYZE {flag}, FORMAT JSON) {sql}")
+                # EXPLAIN ANALYZE executes the query, so it gets the same read-only guard.
+                async with conn.transaction(readonly=True):
+                    plan_rows = await conn.fetch(f"EXPLAIN (ANALYZE {flag}, FORMAT JSON) {sql}")
             return {"isError": False, "content": json.dumps(plan_rows[0][0], default=str)}
         except asyncpg.PostgresError as e:
             return {"isError": True, "content": f"Database error: {e.sqlstate} — {e.args[0]}"}
