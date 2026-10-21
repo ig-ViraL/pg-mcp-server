@@ -13,11 +13,11 @@
 | | |
 |:--|:--|
 | 🧰 **10 tools** | Schema discovery, query execution, `EXPLAIN` plans, slow-query analysis and DB health checks |
-| 🛡️ **Defence in depth** | `SELECT`-only validator (blocks DDL/DML, stacked queries, comments), auto-injected `LIMIT`, 5 s statement timeout, read-only DB role |
+| 🛡️ **Defence in depth** | `SELECT`/`WITH`-only validator (blocks DDL/DML, `SELECT INTO`, row locks, server-side functions, stacked queries, comments), every query in a **read-only transaction**, auto-capped `LIMIT`, 5 s statement timeout, read-only DB role |
 | 🔐 **Bring your own DB** | Visitors' connection strings travel as an **AES-256-GCM** token (`X-DB-URL`); nothing is stored server-side |
 | 🧠 **Prompt included** | An `nl_to_sql` MCP prompt that pushes models to inspect foreign keys before writing JOINs |
 | 🗄️ **Multi-driver** | PostgreSQL (asyncpg), MySQL and SQLite drivers behind one interface |
-| ✅ **Tested** | 29 unit tests (validator, crypto) run in CI |
+| ✅ **Tested** | 59 tests (validator, crypto, read-only execution) run in CI |
 
 > Built with Claude Code as a pair programmer; the safety model and architecture are mine. A live chat UI for this server lives in my [portfolio](https://www.viral-deshle.cloud/pg-mcp).
 
@@ -153,13 +153,26 @@ pg-mcp-server/
 
 ## Safety
 
-All queries pass through `src/safety/validator.py` before touching the database.
+Model-written SQL goes through two independent layers, so a bypass of one is caught by the other.
 
-- Only `SELECT` queries are allowed — anything else is rejected
-- Blocked keywords: `DROP`, `DELETE`, `UPDATE`, `INSERT`, `TRUNCATE`, `ALTER`, `CREATE`, `GRANT`, `REVOKE`, `EXEC`, `EXECUTE`, `COPY`
-- Inline comments (`--`) and multi-statement queries (`; ...`) are blocked
+**1. Static checks** (`src/safety/validator.py`)
+
+- Only queries starting with `SELECT` or `WITH` are accepted
+- Blocked: `DROP`, `DELETE`, `UPDATE`, `INSERT`, `TRUNCATE`, `ALTER`, `CREATE`, `GRANT`, `REVOKE`, `EXEC`, `EXECUTE`, `COPY`, `MERGE` (this also stops data-modifying CTEs)
+- Blocked: `SELECT ... INTO` (creates a table in Postgres, writes a file in MySQL) and row locks (`FOR SHARE`, `FOR KEY SHARE`, `FOR NO KEY UPDATE`)
+- Blocked: server-side functions such as `pg_terminate_backend`, `pg_sleep`, `pg_read_file`, `set_config`, `setval`, `lo_*`, `dblink`, advisory locks, MySQL `SLEEP` / `LOAD_FILE`
+- Comments (`--`, `/* */`, MySQL `#`) and stacked statements (`; ...`) are blocked
+- The outer query always gets a `LIMIT`; a larger trailing `LIMIT` is lowered to the cap
 - Table names validated against `^[a-zA-Z_][a-zA-Z0-9_]*$`
-- Every query runs with `statement_timeout = 5s` — long queries are killed automatically
+
+**2. Read-only execution** (drivers)
+
+- PostgreSQL: `run_query` and `explain_query` run inside `BEGIN READ ONLY` (`EXPLAIN ANALYZE` executes the query, so it gets the same guard)
+- MySQL: `START TRANSACTION READ ONLY`, always rolled back
+- SQLite: the query connection is opened with `mode=ro`
+- Every query runs with a 5 s statement timeout
+
+For your own database, also use a read-only role (below).
 
 ---
 

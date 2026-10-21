@@ -45,6 +45,18 @@ class MySQLDriver(BaseDriver):
                 await cur.execute(sql, args)
                 return list(await cur.fetchall())
 
+    async def _fetch_readonly(self, sql: str) -> list[dict]:
+        """Run model-written SQL inside a read-only transaction, then roll back."""
+        async with self._pool.acquire() as conn:
+            async with conn.cursor(aiomysql.DictCursor) as cur:
+                await cur.execute("SET SESSION max_execution_time = 5000")
+                await cur.execute("START TRANSACTION READ ONLY")
+                try:
+                    await cur.execute(sql)
+                    return list(await cur.fetchall())
+                finally:
+                    await conn.rollback()
+
     async def _fetchone(self, sql: str, args: tuple = ()) -> dict | None:
         rows = await self._fetch(sql, args)
         return rows[0] if rows else None
@@ -67,7 +79,7 @@ class MySQLDriver(BaseDriver):
             return {"isError": True, "content": reason}
         sql = self.inject_limit(sql, limit)
         try:
-            rows = await self._fetch(sql)
+            rows = await self._fetch_readonly(sql)
             return {
                 "isError": False,
                 "content": json.dumps({"rows": rows, "row_count": len(rows)}, default=str),
@@ -308,7 +320,7 @@ LIMIT 50
         try:
             # MySQL 8.0+ supports EXPLAIN ANALYZE; fall back to EXPLAIN FORMAT=JSON
             prefix = "EXPLAIN ANALYZE" if analyze else "EXPLAIN FORMAT=JSON"
-            rows = await self._fetch(f"{prefix} {sql}")
+            rows = await self._fetch_readonly(f"{prefix} {sql}")
             return {"isError": False, "content": json.dumps(rows, default=str)}
         except Exception as e:
             return self._err(e)
