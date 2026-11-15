@@ -1,4 +1,4 @@
-from src.db.manager import get_driver
+from pg_mcp_server.db.manager import get_driver
 
 
 async def handle_run_query(sql: str, limit: int = 100) -> dict:

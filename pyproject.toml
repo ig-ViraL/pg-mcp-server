@@ -1,0 +1,55 @@
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pg-mcp-server"
+version = "0.2.0"
+description = "Safe, audited PostgreSQL access for AI agents over the Model Context Protocol."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+authors = [{ name = "Viral Deshle" }]
+keywords = ["mcp", "postgres", "postgresql", "ai", "llm", "text-to-sql", "claude", "agents"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Topic :: Database",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+  "mcp[cli]>=1.20,<2",
+  "asyncpg>=0.29",
+  "pglast>=7,<9",
+  "cryptography>=42",
+  "pydantic>=2",
+  "pydantic-settings>=2",
+  "python-dotenv>=1",
+  "starlette>=0.36",
+  "uvicorn>=0.27",
+]
+
+[project.optional-dependencies]
+mysql = ["aiomysql>=0.2"]
+sqlite = ["aiosqlite>=0.20"]
+dev = ["pytest>=8", "pytest-asyncio>=0.23", "aiomysql>=0.2", "aiosqlite>=0.20"]
+
+[project.scripts]
+pg-mcp-server = "pg_mcp_server.server:main"
+
+[project.urls]
+Homepage = "https://www.viral-deshle.cloud/pg-mcp"
+Repository = "https://github.com/ig-ViraL/pg-mcp-server"
+Issues = "https://github.com/ig-ViraL/pg-mcp-server/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["pg_mcp_server"]
+
+[tool.hatch.build.targets.sdist]
+include = ["pg_mcp_server", "tests", "README.md", "LICENSE", "pg-mcp.example.toml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

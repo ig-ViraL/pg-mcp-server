@@ -1,6 +1,16 @@
 import json
+import time
+
 import asyncpg
+
+from pg_mcp_server import audit
+from pg_mcp_server.config import get_policy
+from pg_mcp_server.safety.sql_guard import check_sql
 from .base import BaseDriver
+
+
+def _db_error(e: "asyncpg.PostgresError") -> str:
+    return f"Database error: {e.sqlstate} — {e.args[0] if e.args else e}"
 
 
 class PostgresDriver(BaseDriver):
@@ -21,26 +31,49 @@ class PostgresDriver(BaseDriver):
 
     # ── run_query ─────────────────────────────────────────────────────────────
 
+    async def _read_only(self, conn, timeout_ms: int | None = None):
+        """Open a READ ONLY transaction with a local statement timeout."""
+        tx = conn.transaction(readonly=True)
+        await tx.start()
+        ms = int(timeout_ms or get_policy().statement_timeout_ms)
+        await conn.execute(f"SET LOCAL statement_timeout = {ms}")
+        return tx
+
     async def run_query(self, sql: str, limit: int = 100) -> dict:
-        ok, reason = self.validate_query(sql)
-        if not ok:
-            return {"isError": True, "content": reason}
-        sql = self.inject_limit(sql, limit)
+        started = time.perf_counter()
+        policy = get_policy()
+        guard = check_sql(sql, policy)
+        if not guard.ok:
+            audit.record("run_query", "blocked", sql=sql, fingerprint=guard.fingerprint,
+                         reason=guard.reason, tables=guard.tables, started=started)
+            return {"isError": True, "content": f"Query blocked: {guard.reason}"}
+        max_rows = policy.clamp_rows(limit)
         try:
             async with self._pool.acquire() as conn:
-                await conn.execute("SET statement_timeout = '5000'")
-                rows = await conn.fetch(sql)
-            return {
-                "isError": False,
-                "content": json.dumps(
-                    {"rows": [dict(r) for r in rows], "row_count": len(rows)},
-                    default=str,
-                ),
-            }
+                tx = await self._read_only(conn)
+                try:
+                    cur = await conn.cursor(sql)
+                    rows = await cur.fetch(max_rows + 1)
+                finally:
+                    await tx.rollback()
+            truncated = len(rows) > max_rows
+            rows = rows[:max_rows]
+            audit.record("run_query", "allowed", sql=sql, fingerprint=guard.fingerprint,
+                         tables=guard.tables, rows=len(rows), truncated=truncated, started=started)
+            payload = {"rows": [dict(r) for r in rows], "row_count": len(rows)}
+            if truncated:
+                payload["truncated"] = True
+                payload["note"] = f"Result limited to {max_rows} rows. Add filters or aggregation for the full picture."
+            return {"isError": False, "content": json.dumps(payload, default=str)}
         except asyncpg.exceptions.QueryCanceledError:
-            return {"isError": True, "content": "Query timed out after 5 seconds"}
+            msg = f"Query timed out after {policy.statement_timeout_ms} ms"
+            audit.record("run_query", "error", sql=sql, fingerprint=guard.fingerprint,
+                         tables=guard.tables, reason=msg, started=started)
+            return {"isError": True, "content": msg}
         except asyncpg.PostgresError as e:
-            return {"isError": True, "content": f"Database error: {e.sqlstate} — {e.args[0]}"}
+            audit.record("run_query", "error", sql=sql, fingerprint=guard.fingerprint,
+                         tables=guard.tables, reason=_db_error(e), started=started)
+            return {"isError": True, "content": _db_error(e)}
 
     # ── list_tables ───────────────────────────────────────────────────────────
 
@@ -124,9 +157,12 @@ AND pgc.relkind = 'r'
                     "columns": list(r["columns"]),
                 })
 
+            policy = get_policy()
             schema: dict[str, dict] = {}
             for r in col_rows:
                 tbl = r["table_name"]
+                if not policy.table_allowed(tbl):
+                    continue
                 if tbl not in schema:
                     schema[tbl] = {
                         "comment": tbl_comments.get(tbl),
@@ -144,6 +180,8 @@ AND pgc.relkind = 'r'
                     col["foreign_key"] = {"table": r["fk_table"], "column": r["fk_column"]}
                 if r["column_comment"]:
                     col["comment"] = r["column_comment"]
+                if r["column_name"].lower() in policy.denied_columns_for(tbl):
+                    col["restricted"] = True
                 schema[tbl]["columns"].append(col)
 
             return {"isError": False, "content": json.dumps(schema)}
@@ -156,10 +194,17 @@ AND pgc.relkind = 'r'
         ok, reason = self.validate_table_name(table_name)
         if not ok:
             return {"isError": True, "content": reason}
+        if not get_policy().table_allowed(table_name):
+            audit.record("get_row_count", "blocked", tables=[table_name], reason="table not allowed by policy")
+            return {"isError": True, "content": f"Access to table '{table_name}' is not allowed by policy"}
         try:
             async with self._pool.acquire() as conn:
-                await conn.execute("SET statement_timeout = '5000'")
-                row = await conn.fetchrow(f"SELECT COUNT(*) AS row_count FROM {table_name}")
+                tx = await self._read_only(conn)
+                try:
+                    row = await conn.fetchrow(f"SELECT COUNT(*) AS row_count FROM {table_name}")
+                finally:
+                    await tx.rollback()
+            audit.record("get_row_count", "allowed", tables=[table_name])
             return {
                 "isError": False,
                 "content": json.dumps({"table": table_name, "row_count": row["row_count"] if row else 0}),
@@ -235,16 +280,25 @@ AND relname = $1
     async def describe_table(self, table_name: str) -> dict:
         if not table_name.replace("_", "").isalnum():
             return {"isError": True, "content": "Invalid table name"}
+        policy = get_policy()
+        if not policy.table_allowed(table_name):
+            audit.record("describe_table", "blocked", tables=[table_name], reason="table not allowed by policy")
+            return {"isError": True, "content": f"Access to table '{table_name}' is not allowed by policy"}
+        restricted = policy.denied_columns_for(table_name)
         try:
             async with self._pool.acquire() as conn:
-                await conn.execute("SET statement_timeout = '5000'")
+                await conn.execute(f"SET statement_timeout = {int(policy.statement_timeout_ms)}")
                 col_rows = await conn.fetch(self._DESCRIBE_COLS_SQL, table_name)
                 if not col_rows:
                     return {"isError": True, "content": f"Table '{table_name}' not found"}
                 idx_rows = await conn.fetch(self._DESCRIBE_IDX_SQL, table_name)
                 tbl_row = await conn.fetchrow(self._DESCRIBE_TBL_COMMENT_SQL, table_name)
                 count_row = await conn.fetchrow(self._ROW_COUNT_ESTIMATE_SQL, table_name)
-                sample_rows = await conn.fetch(f'SELECT * FROM "{table_name}" LIMIT 5')
+                tx = await self._read_only(conn)
+                try:
+                    sample_rows = await conn.fetch(f'SELECT * FROM "{table_name}" LIMIT 5')
+                finally:
+                    await tx.rollback()
 
             columns = []
             for r in col_rows:
@@ -259,6 +313,8 @@ AND relname = $1
                     col["foreign_key"] = {"table": r["fk_table"], "column": r["fk_column"]}
                 if r["column_comment"]:
                     col["comment"] = r["column_comment"]
+                if r["column_name"].lower() in restricted:
+                    col["restricted"] = True
                 columns.append(col)
 
             result = {
@@ -275,8 +331,12 @@ AND relname = $1
                     }
                     for r in idx_rows
                 ],
-                "sample_rows": [dict(r) for r in sample_rows],
+                "sample_rows": [
+                    {k: v for k, v in dict(r).items() if k.lower() not in restricted}
+                    for r in sample_rows
+                ],
             }
+            audit.record("describe_table", "allowed", tables=[table_name], rows=len(sample_rows))
             return {"isError": False, "content": json.dumps(result, default=str)}
         except asyncpg.PostgresError as e:
             return {"isError": True, "content": f"Database error: {e.sqlstate} — {e.args[0]}"}
@@ -327,9 +387,12 @@ LIMIT 50
                 await conn.execute("SET statement_timeout = '5000'")
                 rows = await conn.fetch(self._SEARCH_SQL, query.strip())
 
+            policy = get_policy()
             results: dict[str, dict] = {}
             for r in rows:
                 tbl = r["table_name"]
+                if not policy.table_allowed(tbl):
+                    continue
                 if tbl not in results:
                     results[tbl] = {
                         "table": tbl,
@@ -348,17 +411,36 @@ LIMIT 50
     # ── explain_query ─────────────────────────────────────────────────────────
 
     async def explain_query(self, sql: str, analyze: bool = False) -> dict:
-        ok, reason = self.validate_query(sql)
-        if not ok:
-            return {"isError": True, "content": f"Query blocked: {reason}"}
+        started = time.perf_counter()
+        policy = get_policy()
+        guard = check_sql(sql, policy)
+        if not guard.ok:
+            audit.record("explain_query", "blocked", sql=sql, fingerprint=guard.fingerprint,
+                         reason=guard.reason, tables=guard.tables, started=started)
+            return {"isError": True, "content": f"Query blocked: {guard.reason}"}
+        if analyze and not policy.allow_explain_analyze:
+            reason = "EXPLAIN ANALYZE executes the query and is disabled (set PGMCP_ALLOW_EXPLAIN_ANALYZE=true to enable)"
+            audit.record("explain_query", "blocked", sql=sql, fingerprint=guard.fingerprint,
+                         reason=reason, tables=guard.tables, started=started)
+            return {"isError": True, "content": reason}
         try:
             async with self._pool.acquire() as conn:
-                await conn.execute("SET statement_timeout = '10000'")
-                flag = "true" if analyze else "false"
-                plan_rows = await conn.fetch(f"EXPLAIN (ANALYZE {flag}, FORMAT JSON) {sql}")
-            return {"isError": False, "content": json.dumps(plan_rows[0][0], default=str)}
+                tx = await self._read_only(conn, max(policy.statement_timeout_ms, 10000))
+                try:
+                    flag = "true" if analyze else "false"
+                    plan_rows = await conn.fetch(f"EXPLAIN (ANALYZE {flag}, FORMAT JSON) {sql}")
+                finally:
+                    await tx.rollback()
+            audit.record("explain_query", "allowed", sql=sql, fingerprint=guard.fingerprint,
+                         tables=guard.tables, started=started)
+            plan = plan_rows[0][0]
+            if isinstance(plan, str):
+                plan = json.loads(plan)
+            return {"isError": False, "content": json.dumps(plan, default=str)}
         except asyncpg.PostgresError as e:
-            return {"isError": True, "content": f"Database error: {e.sqlstate} — {e.args[0]}"}
+            audit.record("explain_query", "error", sql=sql, fingerprint=guard.fingerprint,
+                         tables=guard.tables, reason=_db_error(e), started=started)
+            return {"isError": True, "content": _db_error(e)}
 
     # ── get_db_health ─────────────────────────────────────────────────────────
 
@@ -490,15 +572,29 @@ LIMIT $1
     def _escape(s: str) -> str:
         return s.replace("'", "''")
 
+    @staticmethod
+    def _annotation_gate(tool: str, table_name: str) -> dict | None:
+        policy = get_policy()
+        if not policy.allow_annotations:
+            audit.record(tool, "blocked", tables=[table_name], reason="annotations disabled")
+            return {"isError": True, "content": "Annotations are disabled on this server (PGMCP_ALLOW_ANNOTATIONS=false)"}
+        if not policy.table_allowed(table_name):
+            audit.record(tool, "blocked", tables=[table_name], reason="table not allowed by policy")
+            return {"isError": True, "content": f"Access to table '{table_name}' is not allowed by policy"}
+        return None
+
     async def annotate_table(self, table_name: str, comment: str) -> dict:
         if not self._safe_name(table_name):
             return {"isError": True, "content": "Invalid table name"}
+        if (blocked := self._annotation_gate("annotate_table", table_name)):
+            return blocked
         try:
             async with self._pool.acquire() as conn:
                 await conn.execute("SET statement_timeout = '5000'")
                 await conn.execute(
                     f"COMMENT ON TABLE \"{table_name}\" IS '{self._escape(comment)}'"
                 )
+            audit.record("annotate_table", "allowed", tables=[table_name])
             return {"isError": False, "content": f"Comment set on table '{table_name}'"}
         except asyncpg.PostgresError as e:
             return {"isError": True, "content": f"Database error: {e.sqlstate} — {e.args[0]}"}
@@ -506,12 +602,15 @@ LIMIT $1
     async def annotate_column(self, table_name: str, column_name: str, comment: str) -> dict:
         if not self._safe_name(table_name) or not self._safe_name(column_name):
             return {"isError": True, "content": "Invalid table or column name"}
+        if (blocked := self._annotation_gate("annotate_column", table_name)):
+            return blocked
         try:
             async with self._pool.acquire() as conn:
                 await conn.execute("SET statement_timeout = '5000'")
                 await conn.execute(
                     f"COMMENT ON COLUMN \"{table_name}\".\"{column_name}\" IS '{self._escape(comment)}'"
                 )
+            audit.record("annotate_column", "allowed", tables=[table_name])
             return {"isError": False, "content": f"Comment set on '{table_name}.{column_name}'"}
         except asyncpg.PostgresError as e:
             return {"isError": True, "content": f"Database error: {e.sqlstate} — {e.args[0]}"}

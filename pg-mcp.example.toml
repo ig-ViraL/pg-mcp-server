@@ -1,0 +1,24 @@
+# pg-mcp-server policy file. Pass with --config pg-mcp.toml or PGMCP_CONFIG.
+# Every setting can also be set with a PGMCP_* environment variable.
+
+[policy]
+# Only these tables can be read. Leave empty to allow every table.
+allow_tables = []
+# These tables are never readable (credential catalogs like pg_authid are always denied).
+deny_tables = []
+# Columns the agent can never read, as "table.column". SELECT * on these tables is refused.
+deny_columns = ["customers.email", "customers.phone"]
+# Hard cap on rows returned per query.
+max_rows = 500
+# Per-statement timeout.
+statement_timeout_ms = 5000
+# Let agents write business descriptions with COMMENT ON (annotate_table / annotate_column).
+allow_annotations = true
+# EXPLAIN ANALYZE actually runs the query. Off by default.
+allow_explain_analyze = false
+
+[audit]
+# JSONL audit log. "-" writes to stderr. Remove to disable.
+path = "./pg-mcp-audit.jsonl"
+# Set false to log only a fingerprint of each query, not its text.
+include_sql = true

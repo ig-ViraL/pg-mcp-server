@@ -1,9 +1,13 @@
-.env
-__pycache__/
+*.egg-info/
 *.pyc
 *.pyo
+.DS_Store
+.claude/settings.local.json
+.env
 .pytest_cache/
+.venv/
+__pycache__/
+dist/
 node_modules/
 package-lock.json
-.claude/settings.local.json
-.venv/
+pg-mcp-audit.jsonl

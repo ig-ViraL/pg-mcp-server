@@ -1,5 +1,5 @@
 import pytest
-from src.safety.validator import validate_query, validate_table_name, inject_limit
+from pg_mcp_server.safety.validator import validate_query, validate_table_name, inject_limit
 
 
 @pytest.mark.parametrize("sql", [
