@@ -3,8 +3,8 @@
   "version": "1.0.0",
   "description": "PostgreSQL MCP Server",
   "scripts": {
-    "dev": "mcp-inspector mcp run src/server.py:app",
-    "start": "python src/server.py"
+    "dev": "mcp-inspector python -m pg_mcp_server",
+    "start": "python -m pg_mcp_server --transport http"
   },
   "devDependencies": {
     "@modelcontextprotocol/inspector": "latest"

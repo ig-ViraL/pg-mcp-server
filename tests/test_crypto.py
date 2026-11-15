@@ -1,7 +1,7 @@
 import pytest
 from cryptography.exceptions import InvalidTag
 
-from src.crypto import decrypt_db_url, encrypt_db_url
+from pg_mcp_server.crypto import decrypt_db_url, encrypt_db_url
 
 URL = "postgresql://user:pass@host:5432/db"
 

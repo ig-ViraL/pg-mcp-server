@@ -5,10 +5,9 @@ import time
 from dataclasses import dataclass, field
 
 from .pool import _db_url_var, _session_id_var
+from urllib.parse import urlsplit
 from .drivers.base import BaseDriver
 from .drivers.postgres import PostgresDriver
-from .drivers.mysql import MySQLDriver
-from .drivers.sqlite import SQLiteDriver
 
 logger = logging.getLogger(__name__)
 
@@ -59,12 +58,29 @@ def _get_lock() -> asyncio.Lock:
     return _lock
 
 
+def _safe(url: str) -> str:
+    """host:port/db for logs. Never log credentials."""
+    try:
+        p = urlsplit(url)
+        return f"{p.scheme}://{p.hostname or ''}{':' + str(p.port) if p.port else ''}{p.path}"
+    except Exception:
+        return "<unparseable url>"
+
+
 def _make_driver(url: str) -> BaseDriver:
     if url.startswith(("postgresql://", "postgres://")):
         return PostgresDriver()
     if url.startswith(("mysql://", "mariadb://", "mysql+asyncmy://")):
+        try:
+            from .drivers.mysql import MySQLDriver
+        except ImportError as e:
+            raise ValueError("MySQL support needs: pip install 'pg-mcp-server[mysql]'") from e
         return MySQLDriver()
     if url.startswith(("sqlite:///", "sqlite+aiosqlite:///")):
+        try:
+            from .drivers.sqlite import SQLiteDriver
+        except ImportError as e:
+            raise ValueError("SQLite support needs: pip install 'pg-mcp-server[sqlite]'") from e
         return SQLiteDriver()
     raise ValueError(
         "Unsupported database URL scheme. "
@@ -91,11 +107,11 @@ async def _eviction_loop() -> None:
                 except Exception:
                     pass
                 logger.info(
-                    "session evicted (idle %.0fs > TTL %.0fs): key=%s url=%.40s...",
+                    "session evicted (idle %.0fs > TTL %.0fs): key=%s db=%s",
                     time.monotonic() - entry.last_used,
                     _IDLE_TTL_SECS,
                     key,
-                    entry.url,
+                    _safe(entry.url),
                 )
 
 
@@ -120,7 +136,7 @@ async def _evict_lru() -> None:
         await entry.driver.close()
     except Exception:
         pass
-    logger.info("session evicted (LRU cap=%d): key=%s url=%.40s...", _MAX_SESSIONS, lru_key, entry.url)
+    logger.info("session evicted (LRU cap=%d): key=%s db=%s", _MAX_SESSIONS, lru_key, _safe(entry.url))
 
 # ---------------------------------------------------------------------------
 # Public API
@@ -147,7 +163,7 @@ async def get_driver() -> BaseDriver:
 
     cache_key = (
         f"session:{session_id}" if (byod_url and session_id)
-        else f"url:{url}" if byod_url
+        else f"url:{hash(url)}" if byod_url
         else "default"
     )
 
@@ -163,7 +179,7 @@ async def get_driver() -> BaseDriver:
         driver = _make_driver(url)
         await driver.connect(url)
         _cache[cache_key] = _Entry(driver=driver, url=url)
-        logger.info("session created: key=%s url=%.40s...", cache_key, url)
+        logger.info("session created: key=%s db=%s", cache_key, _safe(url))
         return driver
 
 
@@ -214,7 +230,7 @@ def pool_stats() -> dict:
         "sessions": [
             {
                 "key": k,
-                "url_prefix": e.url[:30] + "..." if len(e.url) > 30 else e.url,
+                "db": _safe(e.url),
                 "idle_secs": round(now - e.last_used, 1),
                 "age_secs": round(now - e.created_at, 1),
             }
